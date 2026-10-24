@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "causal-trace"
+version = "1.0.0"
+description = "Neuro-Symbolic Causal State Kernel & Anti-Thrashing Engine for Autonomous AI Agents"
+readme = "README.md"
+authors = [{ name = "AI Builder" }]
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+causal-trace = "causal_trace.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["causal_trace*"]
+

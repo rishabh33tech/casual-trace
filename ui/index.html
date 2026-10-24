@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CausalTrace | Causal State Kernel & Anti-Thrashing Visualizer</title>
+  <style>
+    :root {
+      --bg: #0f141c;
+      --card-bg: #161e2e;
+      --border: #283447;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #38bdf8;
+      --accent: #818cf8;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #f87171;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+    body { background-color: var(--bg); color: var(--text); padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
+    h1 { font-size: 1.4rem; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+    .badge { font-size: 0.75rem; background: #1e293b; color: var(--accent); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); }
+    .stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; }
+    .stat-title { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 5px; }
+    .stat-val { font-size: 1.6rem; font-weight: bold; }
+    .stat-val.success { color: var(--success); }
+    .stat-val.primary { color: var(--primary); }
+    .stat-val.warning { color: var(--warning); }
+    .stat-val.danger { color: var(--danger); }
+    
+    .main-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+    .graph-panel { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; display: flex; flex-direction: column; }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .panel-title { font-size: 1rem; font-weight: 600; color: var(--text); }
+    canvas { background: #0b0f17; border-radius: 6px; border: 1px solid var(--border); width: 100%; height: 520px; }
+    
+    .sidebar { display: flex; flex-direction: column; gap: 15px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 15px; }
+    .card h3 { font-size: 0.95rem; margin-bottom: 10px; color: var(--primary); }
+    .pill { display: inline-block; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-right: 5px; }
+    .pill.goal { background: #0369a1; color: white; }
+    .pill.action { background: #3b82f6; color: white; }
+    .pill.observation { background: #059669; color: white; }
+    .pill.invariant { background: #d97706; color: white; }
+    .pill.anomaly { background: #dc2626; color: white; }
+    
+    .node-detail { font-size: 0.85rem; line-height: 1.5; color: var(--text-muted); }
+    .node-detail strong { color: var(--text); }
+    .json-box { background: #090d14; padding: 10px; border-radius: 4px; font-size: 0.78rem; overflow-x: auto; color: #38bdf8; max-height: 180px; }
+    
+    .btn-group { display: flex; gap: 8px; margin-bottom: 15px; }
+    button { background: #1e293b; color: var(--text); border: 1px solid var(--border); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+    button:hover, button.active { background: var(--primary); color: #0f141c; font-weight: bold; }
+    .attribution-alert { background: rgba(220, 38, 38, 0.1); border-left: 4px solid var(--danger); padding: 10px; border-radius: 0 4px 4px 0; font-size: 0.85rem; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>CausalTrace Kernel <span class="badge">v1.0.0 Neuro-Symbolic State Machine</span></h1>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-top:4px;">Autonomous Root Cause Attribution & Loop Thrashing Interceptor</p>
+    </div>
+    <div class="btn-group">
+      <button class="active" onclick="loadScenario('ghost_dep')">Scenario 1: Ghost Dependency</button>
+      <button onclick="loadScenario('oscillation')">Scenario 2: Config Thrashing</button>
+      <button onclick="loadScenario('deep_trace')">Scenario 3: Deep Trace Pruning</button>
+    </div>
+  </header>
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-title">Loop Thrashing Intercepts</div>
+      <div class="stat-val danger" id="stat-intercepts">1 Intercept (0 Tokens Wasted)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">Counterfactual Root Cause</div>
+      <div class="stat-val warning" id="stat-culprit">Step 2 (pkill postgres)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">Context Token Compression</div>
+      <div class="stat-val primary" id="stat-compression">78.4% Saved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-title">Causal Completeness</div>
+      <div class="stat-val success" id="stat-completeness">100.0% Guaranteed</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="graph-panel">
+      <div class="panel-header">
+        <span class="panel-title">Interactive Causal Graph (DAG)</span>
+        <span style="font-size:0.8rem; color:var(--text-muted);">Click any node to inspect causal ancestry and invariants</span>
+      </div>
+      <canvas id="dagCanvas"></canvas>
+    </div>
+
+    <div class="sidebar">
+      <div class="card">
+        <h3>Node Inspector</h3>
+        <div id="inspectorContent" class="node-detail">
+          Select a node on the canvas to inspect its causal dependencies, invariants, and counterfactual scores.
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Counterfactual Attribution Matrix</h3>
+        <div id="attributionContent">
+          <div class="attribution-alert">
+            <strong>First Invariant Breach:</strong> Invariant <code>PostgresRunning</code> was violated at Step 2.<br>
+            <strong>Causal Attribution:</strong> Downstream crash at Step 4 is 96.2% causally attributed to Step 2.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Topological Context Prompt</h3>
+        <pre class="json-box" id="promptBox">Loading context...</pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const scenarios = {
+      ghost_dep: {
+        intercepts: "1 Intercept (Deterministic)",
+        culprit: "Step 2 (pkill postgres)",
+        compression: "78.4% Saved",
+        completeness: "100.0%",
+        nodes: [
+          { id: "g1", type: "GOAL", label: "Goal: Run Integration Tests", x: 80, y: 60, color: "#38bdf8" },
+          { id: "a1", type: "ACTION", label: "Step 1: Setup Env", x: 80, y: 150, color: "#818cf8" },
+          { id: "a2", type: "ACTION", label: "Step 2: Cleanup pkill postgres", x: 80, y: 240, color: "#f87171", isCulprit: true },
+          { id: "inv1", type: "INVARIANT", label: "Inv: PostgresActive [BREACHED]", x: 260, y: 240, color: "#fbbf24" },
+          { id: "a3", type: "ACTION", label: "Step 3: touch /tmp/ready", x: 80, y: 330, color: "#818cf8" },
+          { id: "a4", type: "ACTION", label: "Step 4: run test", x: 80, y: 420, color: "#f87171" },
+          { id: "anom1", type: "ANOMALY", label: "Anomaly: ConnectionRefused 5432", x: 260, y: 420, color: "#dc2626" },
+          { id: "a5", type: "ACTION", label: "Step 5 [HEALED]: systemctl start postgres", x: 440, y: 300, color: "#34d399" },
+          { id: "a6", type: "ACTION", label: "Step 6: run test [PASSED]", x: 440, y: 420, color: "#34d399" }
+        ],
+        edges: [
+          { from: "g1", to: "a1", type: "ENABLES" },
+          { from: "a1", to: "a2", type: "ENABLES" },
+          { from: "a2", to: "inv1", type: "INVALIDATES" },
+          { from: "a2", to: "a3", type: "ENABLES" },
+          { from: "a3", to: "a4", type: "ENABLES" },
+          { from: "a4", to: "anom1", type: "TRIGGERS" },
+          { from: "inv1", to: "anom1", type: "CAUSES", dashed: true },
+          { from: "anom1", to: "a5", type: "MITIGATES" },
+          { from: "a5", to: "inv1", type: "RESTORES" },
+          { from: "a5", to: "a6", type: "ENABLES" }
+        ],
+        directive: "ROOT CAUSE IDENTIFIED: Step 2 ('pkill postgres') invalidated invariant 'PostgresActive'. Intercepted blind retry. Forcing 'systemctl start postgres' before proceeding."
+      },
+      oscillation: {
+        intercepts: "2 Intercepts (Banned Pattern)",
+        culprit: "Cycle A -> B -> A",
+        compression: "82.1% Saved",
+        completeness: "100.0%",
+        nodes: [
+          { id: "g1", type: "GOAL", label: "Goal: Resolve Port Conflict", x: 80, y: 60, color: "#38bdf8" },
+          { id: "a1", type: "ACTION", label: "Step 1: Set Port 8080", x: 80, y: 180, color: "#818cf8" },
+          { id: "a2", type: "ACTION", label: "Step 2: Set Port 8081", x: 260, y: 180, color: "#818cf8" },
+          { id: "a3", type: "ACTION", label: "Step 3: Set Port 8080 [BLOCKED]", x: 170, y: 320, color: "#dc2626", isCulprit: true },
+          { id: "a4", type: "ACTION", label: "Step 4 [HEALED]: Allocate Dynamic Ephemeral Port", x: 380, y: 320, color: "#34d399" }
+        ],
+        edges: [
+          { from: "g1", to: "a1", type: "ENABLES" },
+          { from: "a1", to: "a2", type: "TRIGGERS" },
+          { from: "a2", to: "a3", type: "CYCLE_DETECTED", dashed: true },
+          { from: "a3", to: "a4", type: "INTERCEPTED" }
+        ],
+        directive: "THRASHING DETECTED: Period 2 cycle detected with entropy 0.69. Action 'Set Port 8080' banned. Synthesized dynamic port allocation directive."
+      },
+      deep_trace: {
+        intercepts: "4 Intercepts",
+        culprit: "Step 4 (Corrupted Env Path)",
+        compression: "86.5% Saved",
+        completeness: "100.0%",
+        nodes: [
+          { id: "g1", type: "GOAL", label: "Goal: Multi-Stage Build & Deploy", x: 80, y: 60, color: "#38bdf8" },
+          { id: "a1", type: "ACTION", label: "Step 1: Setup Compiler", x: 80, y: 150, color: "#818cf8" },
+          { id: "a4", type: "ACTION", label: "Step 4: Mutate PATH [FIB]", x: 80, y: 260, color: "#f87171", isCulprit: true },
+          { id: "a18", type: "ACTION", label: "Step 18: Link Artifacts [FAILED]", x: 80, y: 380, color: "#dc2626" },
+          { id: "a19", type: "ACTION", label: "Step 19 [HEALED]: Restore PATH & Re-link", x: 300, y: 380, color: "#34d399" }
+        ],
+        edges: [
+          { from: "g1", to: "a1", type: "ENABLES" },
+          { from: "a1", to: "a4", type: "ENABLES" },
+          { from: "a4", to: "a18", type: "INVALIDATES", dashed: true },
+          { from: "a18", to: "a19", type: "MITIGATES" }
+        ],
+        directive: "PRUNING ACTIVE: 28 historical intermediate tool observations condensed. Active causal frontier extracted with 100% precondition preservation."
+      }
+    };
+
+    let currentScenario = "ghost_dep";
+    let selectedNode = null;
+
+    const canvas = document.getElementById("dagCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.clientWidth - 30;
+      canvas.height = 520;
+      drawGraph();
+    }
+    window.addEventListener("resize", resizeCanvas);
+
+    function loadScenario(key) {
+      currentScenario = key;
+      document.querySelectorAll(".btn-group button").forEach(b => b.classList.remove("active"));
+      event.target.classList.add("active");
+
+      const s = scenarios[key];
+      document.getElementById("stat-intercepts").textContent = s.intercepts;
+      document.getElementById("stat-culprit").textContent = s.culprit;
+      document.getElementById("stat-compression").textContent = s.compression;
+      document.getElementById("stat-completeness").textContent = s.completeness;
+      document.getElementById("promptBox").textContent = s.directive;
+
+      selectedNode = null;
+      document.getElementById("inspectorContent").innerHTML = "Select a node on the canvas to inspect its causal dependencies.";
+      drawGraph();
+    }
+
+    function drawGraph() {
+      const data = scenarios[currentScenario];
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Edges
+      data.edges.forEach(e => {
+        const fromNode = data.nodes.find(n => n.id === e.from);
+        const toNode = data.nodes.find(n => n.id === e.to);
+        if (!fromNode || !toNode) return;
+
+        ctx.beginPath();
+        if (e.dashed) {
+          ctx.setLineDash([5, 5]);
+          ctx.strokeStyle = "#f87171";
+          ctx.lineWidth = 2;
+        } else {
+          ctx.setLineDash([]);
+          ctx.strokeStyle = "#475569";
+          ctx.lineWidth = 1.5;
+        }
+
+        ctx.moveTo(fromNode.x + 80, fromNode.y + 15);
+        ctx.lineTo(toNode.x, toNode.y + 15);
+        ctx.stroke();
+
+        // Edge label
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "10px monospace";
+        const midX = (fromNode.x + 80 + toNode.x) / 2;
+        const midY = (fromNode.y + 15 + toNode.y + 15) / 2 - 4;
+        ctx.fillText(e.type, midX, midY);
+      });
+      ctx.setLineDash([]);
+
+      // Draw Nodes
+      data.nodes.forEach(n => {
+        const isSel = selectedNode && selectedNode.id === n.id;
+        ctx.fillStyle = isSel ? "#ffffff" : n.color;
+        ctx.strokeStyle = n.isCulprit ? "#ef4444" : (isSel ? "#38bdf8" : "#334155");
+        ctx.lineWidth = n.isCulprit ? 3 : (isSel ? 2 : 1);
+
+        // Box
+        ctx.fillStyle = "#161e2e";
+        ctx.fillRect(n.x, n.y, 180, 36);
+        ctx.strokeRect(n.x, n.y, 180, 36);
+
+        // Status indicator dot
+        ctx.beginPath();
+        ctx.arc(n.x + 12, n.y + 18, 5, 0, Math.PI * 2);
+        ctx.fillStyle = n.color;
+        ctx.fill();
+
+        // Label
+        ctx.fillStyle = "#f1f5f9";
+        ctx.font = "11px -apple-system, monospace";
+        ctx.fillText(n.label.substring(0, 24), n.x + 24, n.y + 22);
+      });
+    }
+
+    canvas.addEventListener("click", (evt) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = evt.clientX - rect.left;
+      const y = evt.clientY - rect.top;
+
+      const data = scenarios[currentScenario];
+      const clicked = data.nodes.find(n => x >= n.x && x <= n.x + 180 && y >= n.y && y <= n.y + 36);
+
+      if (clicked) {
+        selectedNode = clicked;
+        drawGraph();
+        document.getElementById("inspectorContent").innerHTML = `
+          <p><strong>Node ID:</strong> ${clicked.id}</p>
+          <p><strong>Type:</strong> <span class="pill ${clicked.type.toLowerCase()}">${clicked.type}</span></p>
+          <p><strong>Label:</strong> ${clicked.label}</p>
+          <p><strong>Is Root Cause Culprit:</strong> ${clicked.isCulprit ? '<span style="color:#f87171;font-weight:bold;">YES (First Invariant Breach)</span>' : 'No'}</p>
+          <p><strong>Causal Depth:</strong> Level ${Math.round(clicked.y / 80)}</p>
+        `;
+      }
+    });
+
+    setTimeout(resizeCanvas, 50);
+  </script>
+</body>
+</html>
